@@ -17,3 +17,4 @@ for o in $dir/src/debian/dropbear.*; do
 done
 
 sed -i 's/^dropbear (/dropbear-static (/g' $dir/src/debian/changelog
+version_suffix=gl0
