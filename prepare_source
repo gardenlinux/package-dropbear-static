@@ -1,0 +1,19 @@
+pkg=dropbear-static
+apt_src dropbear
+
+apply_patches
+
+for o in $dir/src/debian/dropbear-bin.*; do
+  i="${o/dropbear-bin/dropbear-static-bin}"
+  mv "$o" "$i"
+done
+for o in $dir/src/debian/dropbear-initramfs.*; do
+  i="${o/dropbear-initramfs/dropbear-static-initramfs}"
+  mv "$o" "$i"
+done
+for o in $dir/src/debian/dropbear.*; do
+  i="${o/dropbear/dropbear-static}"
+  mv "$o" "$i"
+done
+
+sed -i 's/^dropbear (/dropbear-static (/g' $dir/src/debian/changelog

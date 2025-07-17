@@ -1,0 +1,59 @@
+--- a/debian/control	2025-05-07 17:02:27.000000000 +0200
++++ b/debian/control	2025-07-17 16:36:04.370562781 +0200
+@@ -1,4 +1,4 @@
+-Source: dropbear
++Source: dropbear-static
+ Section: net
+ Priority: optional
+ Maintainer: Guilhem Moulin <guilhem@debian.org>
+@@ -13,12 +13,13 @@
+ Vcs-Git: https://salsa.debian.org/debian/dropbear.git -b debian/latest
+ Vcs-Browser: https://salsa.debian.org/debian/dropbear
+ 
+-Package: dropbear-bin
++Package: dropbear-static-bin
+ Architecture: any
+ Depends: ${misc:Depends}, ${shlibs:Depends}
+ Suggests: openssh-client
+ Breaks: dropbear (<< 2015.68-1)
+ Replaces: dropbear (<< 2015.68-1)
++Conflicts: dropbear-bin
+ Provides: ssh-server
+ Multi-Arch: foreign
+ Description: lightweight SSH2 server and client - command line tools
+@@ -32,11 +33,12 @@
+  This package provides dropbear(8), dbclient(1), dropbearkey(1) and
+  dropbearconvert(1).
+ 
+-Package: dropbear
++Package: dropbear-static
+ Architecture: all
+ Pre-Depends: ${misc:Pre-Depends}
+-Depends: dropbear-bin (>= ${source:Version}), ${misc:Depends}
+-Suggests: dropbear-initramfs, runit, sysvinit-utils (>= 3.05-4~)
++Depends: dropbear-static-bin (>= ${source:Version}), ${misc:Depends}
++Conflicts: dropbear
++Suggests: dropbear-static-initramfs, runit, sysvinit-utils (>= 3.05-4~)
+ Multi-Arch: foreign
+ Description: lightweight SSH2 server and client - startup scripts
+  dropbear is a SSH 2 server and client designed to be small enough to
+@@ -48,16 +50,17 @@
+  .
+  This package provides startup scripts for the service manager.
+ 
+-Package: dropbear-initramfs
++Package: dropbear-static-initramfs
+ Architecture: all
+ Depends: busybox | busybox-static,
+-         dropbear-bin (>= ${source:Version}),
++         dropbear-static-bin (>= ${source:Version}),
+          initramfs-tools (>= 0.94),
+          udev,
+          ${misc:Depends}
+ Recommends: cryptsetup-initramfs
+ Breaks: dropbear (<< 2015.68-1)
+ Replaces: dropbear (<< 2015.68-1)
++Conflicts: dropbear-initramfs
+ Multi-Arch: foreign
+ Description: lightweight SSH2 server and client - initramfs integration
+  dropbear is a SSH 2 server and client designed to be small enough to

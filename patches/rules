@@ -1,0 +1,11 @@
+--- a/debian/rules	2025-05-07 17:02:27.000000000 +0200
++++ b/debian/rules	2025-07-17 14:36:40.768792048 +0200
+@@ -24,7 +24,7 @@
+ 	dh $@
+ 
+ override_dh_auto_configure:
+-	dh_auto_configure -- --disable-bundled-libtom \
++	dh_auto_configure -- --enable-static \
+ 	  CC='$(CC)' CFLAGS='$(CFLAGS)' $(CONFFLAGS)
+ 
+ execute_before_dh_auto_build:
