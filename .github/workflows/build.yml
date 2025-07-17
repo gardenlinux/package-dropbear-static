@@ -1,0 +1,173 @@
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  build:
+    uses: gardenlinux/package-build/.github/workflows/build.yml@main
+    with:
+      release: ${{ github.ref == 'refs/heads/main' }}
+
+  extract-and-upload-binaries:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' && needs.build.result == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get latest release info
+        id: latest_release
+        run: |
+          latest_release=$(gh release list --limit 1 --json tagName --jq '.[0]')
+          echo "Latest release: $latest_release"
+          tag_name=$(echo "$latest_release" | jq -r '.tagName')
+          echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
+          echo "Latest release tag: $tag_name"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download and extract build artifacts
+        run: |
+          VERSION="${{ steps.latest_release.outputs.tag_name }}"
+          echo "Downloading artifacts for release: $VERSION"
+
+          # Download release assets
+          gh release download "$VERSION"
+          cat build.tar.xz.* > build.tar.xz
+          tar xf build.tar.xz
+
+          echo "Downloaded .deb files:"
+          find . -name "*.deb" -type f
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev file
+
+      - name: Extract dropbear binaries
+        run: |
+          PACKAGE="dropbear-static-bin"
+          VERSION="${{ steps.latest_release.outputs.tag_name }}"
+
+          echo "=== Extracting ${PACKAGE}_${VERSION}_*.deb files ==="
+          find . -name "${PACKAGE}_${VERSION}_*.deb" -type f -print0 | while IFS= read -r -d '' deb_file; do
+            echo "Found: ${deb_file}"
+            ARCH=$(dpkg-deb -f "${deb_file}" Architecture)
+            echo "Architecture: ${ARCH}"
+            mkdir -p extracted/${ARCH}
+            dpkg-deb -R "${deb_file}" extracted/${ARCH}
+          done
+
+          echo "=== Preparing binaries for upload ==="
+          mkdir -p release-binaries
+
+          # Find and copy executable files (binaries)
+          for arch in $(ls extracted/ 2>/dev/null || echo ""); do
+            echo "=== Processing binaries for ${arch} ==="
+            find extracted/${arch} -type f -executable -exec file {} \; | grep -E "(executable|binary)" | while read -r line; do
+              file_path=$(echo "$line" | cut -d: -f1)
+              file_name=$(basename "$file_path")
+
+              echo "Found binary: $file_path"
+              cp "$file_path" "release-binaries/${file_name}.${arch}"
+              sha256sum "$file_path" > "release-binaries/${file_name}.${arch}.sha256"
+            done
+          done
+
+          echo "=== Release binaries prepared ==="
+          ls -la release-binaries/ || echo "No binaries found"
+
+      - name: Create consolidated checksums file
+        if: hashFiles('release-binaries/*') != ''
+        run: |
+          echo "=== Creating consolidated checksums file ==="
+
+          # Create a consolidated SHA256SUMS file
+          cd release-binaries
+          rm -f SHA256SUMS
+
+          # Add header to checksums file
+          echo "# SHA256 Checksums for Dropbear Static Binaries" > SHA256SUMS
+          echo "# Release: ${{ steps.latest_release.outputs.tag_name }}" >> SHA256SUMS
+          echo "# Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> SHA256SUMS
+          echo "" >> SHA256SUMS
+
+          # Add checksums for each binary (not the .sha256 files themselves)
+          for binary in *; do
+            if [[ -f "$binary" && "$binary" != *.sha256 && "$binary" != "SHA256SUMS" ]]; then
+              sha256sum "$binary" >> SHA256SUMS
+              echo "Added checksum for: $binary"
+            fi
+          done
+
+          echo "=== Consolidated checksums file created ==="
+          cat SHA256SUMS
+          cd ..
+
+      - name: Update release description with checksums
+        if: hashFiles('release-binaries/*') != ''
+        run: |
+          tag_name="${{ steps.latest_release.outputs.tag_name }}"
+
+          # Get current release info
+          current_body=$(gh release view "$tag_name" --json body --jq '.body')
+
+          # Build checksums section in a single step
+          {
+            echo ""
+            echo "## 📦 Extracted Dropbear Binaries"
+            echo ""
+            echo "This release includes the following extracted static dropbear binaries:"
+            echo ""
+
+            # Add binary list with sizes
+            cd release-binaries
+            for binary in *; do
+              if [[ -f "$binary" && "$binary" != *.sha256 && "$binary" != "SHA256SUMS" ]]; then
+                size=$(stat -c%s "$binary" | numfmt --to=iec-i --suffix=B)
+                echo "- \`${binary}\` (${size})"
+              fi
+            done
+
+            echo ""
+            echo "## 🔐 SHA256 Checksums"
+            echo ""
+            echo '```'
+            cat SHA256SUMS | grep -v '^#' | grep -v '^$'
+            echo '```'
+            echo ""
+            echo "> 💡 Individual .sha256 files are also available for each binary, or download the consolidated [SHA256SUMS](https://github.com/${{ github.repository }}/releases/download/${tag_name}/SHA256SUMS) file."
+            cd ..
+          } > checksums_section.md
+
+          # Update release with combined content
+          {
+            echo "$current_body"
+            cat checksums_section.md
+          } | gh release edit "$tag_name" --notes-file -
+
+          rm -f checksums_section.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload binaries to release
+        if: hashFiles('release-binaries/*') != ''
+        run: |
+          tag_name="${{ steps.latest_release.outputs.tag_name }}"
+          echo "Uploading binaries to release: $tag_name"
+
+          for binary in release-binaries/*; do
+            if [[ -f "$binary" ]]; then
+              filename=$(basename "$binary")
+              echo "Uploading: $filename"
+              gh release upload "$tag_name" "$binary" --clobber
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
